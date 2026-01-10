@@ -5,6 +5,8 @@
  * - Surlignage Synchronisé
  * - Segmentation Intelligente (Fluidité après les points)
  * - Gestion de bibliothèque d'Ebooks (Sauvegarde/Chargement/Suppression)
+ * * CORRECTION FINALE: Ajout de gardes isPaused dans utterance.onerror pour empêcher la réinitialisation involontaire
+ * * causée par le déclenchement tardif de l'événement d'erreur après un synth.cancel().
  */
 class TTSReader {
     constructor() {
@@ -47,7 +49,7 @@ class TTSReader {
         this.isSpeaking = false;
         this.isPaused = false;
         this.textSegments = [];
-        this.currentSegmentIndex = 0;
+        this.currentSegmentIndex = 0; // Index du segment en cours de lecture
         this.savedEbooks = this.loadEbooks(); // Charge les ebooks au démarrage
         this.preferredVoiceName = null; // Prépare l'application de la voix préférée
 
@@ -111,7 +113,7 @@ class TTSReader {
             this.dom.pitchInput.value = prefs.pitch || 1;
             this.dom.volumeInput.value = prefs.volume || 1;
 
-            this.preferredVoiceName = prefs.voiceName; 
+            this.preferredVoiceName = prefs.voiceName;	
         }
     }
 
@@ -133,7 +135,7 @@ class TTSReader {
             if (this.preferredVoiceName && voice.name === this.preferredVoiceName) {
                 option.selected = true;
                 frenchVoiceFound = true; // Pour ne pas écraser si l'utilisateur a sélectionné une autre langue
-            } 
+            }	
             // Sinon, sélectionne la première voix française par défaut
             else if (!frenchVoiceFound && voice.lang.startsWith('fr-')) {
                 option.selected = true;
@@ -162,17 +164,23 @@ class TTSReader {
         return segments;
     }
 
+    /** * Démarre une nouvelle lecture. Réinitialise toujours l'index à 0.
+      */
     startReading = () => {
-        if (this.isSpeaking) this.stopReading();
-        
+        // Annuler toute lecture ou pause en cours avant de commencer une nouvelle
+        if (this.synth.speaking || this.isSpeaking || this.isPaused) {
+            this.stopReading();
+        }
+
         const text = this.dom.textInput.value.trim();
         if (!text) {
             this.dom.statusDiv.textContent = "❌ Aucun texte à lire.";
             return;
         }
 
+        // Configuration pour un nouveau départ
         this.textSegments = this.segmentText(text);
-        this.currentSegmentIndex = 0;
+        this.currentSegmentIndex = 0;	
         this.isSpeaking = true;
         this.isPaused = false;
         
@@ -180,19 +188,27 @@ class TTSReader {
         this.readNextSegment();
     }
 
+    /**
+     * Lit le segment de texte à l'index actuel, puis passe au suivant.
+     */
     readNextSegment = () => {
+        // Vérifie si la fin du texte est atteinte
         if (this.currentSegmentIndex >= this.textSegments.length) {
             this.finishReading();
             return;
         }
 
+        // Ne rien faire si on est dans un état de pause forcée
+        if (this.isPaused) {
+            return;	
+        }
+
         let segmentText = this.textSegments[this.currentSegmentIndex].trim();
 
-        // Correction pour la fluidité: Si ce n'est pas le dernier segment, 
-        // on évite de le terminer par un point strict, forçant la continuité.
+        // Correction pour la fluidité 
         if (this.currentSegmentIndex < this.textSegments.length - 1) {
              if (segmentText.endsWith('.')) {
-                 segmentText = segmentText.slice(0, -1) + ','; 
+                 segmentText = segmentText.slice(0, -1) + ',';	
              }
         }
         
@@ -219,13 +235,27 @@ class TTSReader {
 
         // Quand le segment est terminé, passer au suivant
         utterance.onend = () => {
+            // GARDE 1: Si l'application est en pause, on ignore l'événement onend du cancel().
+            if (this.isPaused) { 
+                return; 
+            }
+            
             this.currentSegmentIndex++;
             this.readNextSegment();
         };
 
         utterance.onerror = (e) => {
             console.error('TTS Error:', e);
-            this.dom.statusDiv.textContent = ` ⏹️ Arret de la lecture  au segment ${this.currentSegmentIndex + 1}`;
+            
+            // GARDE 3 (NOUVELLE): Si nous sommes déjà en pause, l'erreur est due au cancel()
+            // et ne doit PAS appeler stopReading().
+            if (this.isPaused) {
+                this.dom.statusDiv.textContent = "⚠️ Arrêt forcé (Pause OK).";
+                return; 
+            }
+            
+            // Si ce n'est pas en pause, c'est une vraie erreur.
+            this.dom.statusDiv.textContent = ` ⏹️ Arrêt de la lecture au segment ${this.currentSegmentIndex + 1}`;
             this.stopReading();
         };
 
@@ -235,37 +265,63 @@ class TTSReader {
         this.updateControlState();
     }
 
+    /** * Gère la pause et la reprise de manière fiable sur toutes les plateformes.
+      */
     togglePause = () => {
-        if (!this.isSpeaking && this.textSegments.length > 0) {
+        // Cas 1 : Si la lecture est terminée ou n'a jamais commencé
+        if (!this.isSpeaking && this.currentSegmentIndex === 0 && this.textSegments.length > 0) {
             this.startReading();
             return;
         }
-        
+
+        // Cas 2 : PAUSE (si la lecture est en cours et n'est pas déjà en pause)
         if (this.isSpeaking && !this.isPaused) {
-            this.synth.pause();
+            // Utiliser cancel() pour garantir l'arrêt 
+            this.synth.cancel();	
             this.isPaused = true;
+            this.isSpeaking = false;	
             this.dom.statusDiv.textContent = "⏸️ Lecture en pause.";
-        } else if (this.isPaused) {
-            this.synth.resume();
+            
+        }	
+        // Cas 3 : REPRENDRE (si l'état est "paused" et qu'il reste des segments à lire)
+        else if (this.isPaused && this.currentSegmentIndex < this.textSegments.length) {
             this.isPaused = false;
+            this.isSpeaking = true;
+            
+            // Relancer la lecture à partir du segment sauvegardé
+            this.readNextSegment();	
+            
             this.dom.statusDiv.textContent = `▶️ Lecture reprise du segment ${this.currentSegmentIndex + 1}.`;
         }
+        
         this.updateControlState();
     }
 
+    /**
+     * Arrête complètement la lecture et réinitialise l'état.
+     */
     stopReading = () => {
+        // Annule toutes les lectures en cours (très important pour vider le moteur)
         if (this.synth.speaking || this.isSpeaking || this.isPaused) {
             this.synth.cancel();
-            this.isSpeaking = false;
-            this.isPaused = false;
-            this.currentSegmentIndex = 0;
-            this.clearHighlighting();
-            this.dom.statusDiv.textContent = "⏹️ Lecture arrêtée.";
-            this.updateControlState();
         }
+        
+        // Réinitialisation complète des états
+        this.isSpeaking = false;
+        this.isPaused = false;
+        this.currentSegmentIndex = 0; 
+        
+        this.clearHighlighting();
+        this.dom.statusDiv.textContent = "⏹️ Lecture arrêtée.";
+        this.updateControlState();
     }
     
     finishReading() {
+        // GARDE 2: Si nous sommes en pause, toute tentative d'appeler finishReading est ignorée.
+        if (this.isPaused) { 
+            return;
+        }
+
         this.synth.cancel();
         this.isSpeaking = false;
         this.isPaused = false;
@@ -283,7 +339,7 @@ class TTSReader {
         
         const wordsAndSeparators = fullText.match(/\S+|\s+/g) || [];
         this.dom.readView.innerHTML = wordsAndSeparators.map((part, index) => {
-            if (/\s/.test(part)) return part; 
+            if (/\s/.test(part)) return part;	
             return `<span class="word-span" data-word-index="${index}">${part}</span>`;
         }).join('');
     }
@@ -292,7 +348,7 @@ class TTSReader {
         this.dom.readView.innerHTML = '';
         this.dom.textInput.classList.remove('hidden');
         this.dom.readView.classList.add('hidden');
-        this.dom.textInput.style.display = 'block'; 
+        this.dom.textInput.style.display = 'block';	
     }
 
     updateSegmentHighlight() {
@@ -362,7 +418,7 @@ class TTSReader {
             if (this.textSegments[this.currentSegmentIndex].includes(span.textContent) && span.textContent.trim() === currentWord.trim() && !found) {
                 span.classList.add('highlight');
                 found = true;
-                break; 
+                break;	
             }
         }
     }
@@ -428,7 +484,7 @@ class TTSReader {
             const title = item.getAttribute('data-title');
             item.querySelector('.load-ebook-title').addEventListener('click', () => this.handleLoadEbook(title));
             item.querySelector('.delete-ebook-btn').addEventListener('click', (e) => {
-                e.stopPropagation(); 
+                e.stopPropagation();	
                 this.handleDeleteEbook(title);
             });
         });
@@ -469,7 +525,7 @@ class TTSReader {
             delete this.savedEbooks[title];
             this.saveEbooks(this.savedEbooks);
             this.dom.statusDiv.textContent = `🗑️ Ebook "${title}" supprimé.`;
-            this.openLoadModal(); 
+            this.openLoadModal();	
         }
     }
 
@@ -477,15 +533,22 @@ class TTSReader {
 
     updateControlState() {
         const hasText = this.dom.textInput.value.trim().length > 0;
+        const isReadingActive = this.isSpeaking || this.isPaused;
         
-        this.dom.playBtn.disabled = !hasText || this.isSpeaking;
-        this.dom.pauseBtn.disabled = !this.isSpeaking && !this.isPaused;
-        this.dom.stopBtn.disabled = !this.isSpeaking && !this.isPaused;
+        // 1. Bouton Play (Démarrer) : Désactivé si la lecture est déjà active (en cours ou en pause).
+        this.dom.playBtn.disabled = !hasText || isReadingActive;
+        
+        // 2. Bouton Pause/Reprendre : Actif si la lecture est en cours OU en pause.
+        this.dom.pauseBtn.disabled = !isReadingActive;
+        
+        // 3. Bouton Stop : Actif si la lecture est en cours OU en pause.
+        this.dom.stopBtn.disabled = !isReadingActive;
+
         this.dom.saveBtn.disabled = !hasText;
         this.dom.loadBtn.disabled = Object.keys(this.savedEbooks).length === 0;
         
-        this.dom.pauseBtn.innerHTML = this.isPaused 
-            ? '<i class="fas fa-play"></i> Reprendre' 
+        this.dom.pauseBtn.innerHTML = this.isPaused	
+            ? '<i class="fas fa-play"></i> Reprendre'	
             : '<i class="fas fa-pause"></i> Pause';
     }
 
@@ -496,7 +559,7 @@ class TTSReader {
         this.dom.stopBtn.addEventListener('click', this.stopReading);
 
         // Préférences et Sauvegarde
-        this.dom.rateInput.addEventListener('input', () => { 
+        this.dom.rateInput.addEventListener('input', () => {	
             this.dom.rateValueSpan.textContent = this.dom.rateInput.value;
             this.savePreferences();
         });
