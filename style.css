@@ -341,3 +341,97 @@ input:checked + .slider:before { transform: translateX(26px); }
         justify-content: center;
     }
 }
+/* --- STYLISATION DU GESTIONNAIRE DE MUSIQUE --- */
+/* --- AMBIANCE SONORE (Ajustée) --- */
+.music-controls {
+    background: var(--bg-main);
+    padding: 20px;
+    border-radius: 15px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    
+    /* AJOUT DE L'ESPACE ICI */
+    margin-bottom: 30px;
+    width: 100%;
+}
+
+/* --- BOUTONS DE LECTURE (Ajustés) --- */
+.controls-playback {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    
+    /* AJOUT D'ESPACE AVANT LA SUITE */
+    margin-bottom: 25px;
+}
+
+.music-controls:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+.music-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 1.1em;
+}
+
+/* Customisation de l'upload de musique */
+#music-input {
+    width: 100%;
+    padding: 8px;
+    background: var(--bg-main);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 0.85em;
+    color: var(--text-sub);
+    cursor: pointer;
+}
+
+.music-player-row {
+    margin-top: 15px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: rgba(0, 123, 255, 0.05);
+    padding: 10px;
+    border-radius: 10px;
+}
+
+#bg-audio {
+    flex-grow: 1;
+    height: 30px;
+    filter: sepia(20%) saturate(70%) grayscale(1) contrast(90%) invert(var(--is-dark, 0));
+}
+
+.volume-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 100px;
+}
+
+.volume-container label {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+    color: var(--text-sub);
+}
+
+#music-volume {
+    width: 100%;
+    cursor: pointer;
+}
+
+/* Variable pour l'inversion du lecteur audio en mode sombre */
+body.dark-mode {
+    --is-dark: 1;
+}

@@ -7,6 +7,7 @@
  * - Gestion de bibliothèque d'Ebooks (Sauvegarde/Chargement/Suppression)
  * * CORRECTION FINALE: Ajout de gardes isPaused dans utterance.onerror pour empêcher la réinitialisation involontaire
  * * causée par le déclenchement tardif de l'événement d'erreur après un synth.cancel().
+ * * CORRECTION PC: Mise à jour de readNextSegment pour nettoyer le surlignage de segment et résoudre le problème de blocage/d'erreur immédiate.
  */
 class TTSReader {
     constructor() {
@@ -42,9 +43,15 @@ class TTSReader {
             modalTitle: document.getElementById('modal-title'),
             modalBody: document.getElementById('modal-body'),
             closeBtn: document.querySelector('.close-btn'),
+            musicInput: document.getElementById('music-input'),
+            bgAudio: document.getElementById('bg-audio'),
+            musicVolume: document.getElementById('music-volume')
         };
-
         // État de l'application
+        this.dom.musicInput.addEventListener('change', (e) => this.handleMusicUpload(e));
+        this.dom.musicVolume.addEventListener('input', (e) => {
+            this.dom.bgAudio.volume = e.target.value;
+        });
         this.voices = [];
         this.isSpeaking = false;
         this.isPaused = false;
@@ -202,10 +209,22 @@ class TTSReader {
         if (this.isPaused) {
             return;	
         }
+        
+        // ******************** CORRECTION DÉBUT ********************
+        // 1. Nettoyer le surlignage précédent
+        this.clearActiveHighlighting(); 
+        
+        // 2. Appliquer le surlignage du segment en cours (pour le défilement et la mise en évidence)
+        const currentSegmentClass = `segment-${this.currentSegmentIndex}`;
+        this.dom.readView.querySelectorAll(`.${currentSegmentClass}`).forEach(span => {
+            span.classList.add('segment-highlight');
+        });
+        // ******************** CORRECTION FIN ********************
+
 
         let segmentText = this.textSegments[this.currentSegmentIndex].trim();
 
-        // Correction pour la fluidité 
+        // Correction pour la fluidité 
         if (this.currentSegmentIndex < this.textSegments.length - 1) {
              if (segmentText.endsWith('.')) {
                  segmentText = segmentText.slice(0, -1) + ',';	
@@ -236,8 +255,8 @@ class TTSReader {
         // Quand le segment est terminé, passer au suivant
         utterance.onend = () => {
             // GARDE 1: Si l'application est en pause, on ignore l'événement onend du cancel().
-            if (this.isPaused) { 
-                return; 
+            if (this.isPaused) { 
+                return; 
             }
             
             this.currentSegmentIndex++;
@@ -247,14 +266,13 @@ class TTSReader {
         utterance.onerror = (e) => {
             console.error('TTS Error:', e);
             
-            // GARDE 3 (NOUVELLE): Si nous sommes déjà en pause, l'erreur est due au cancel()
-            // et ne doit PAS appeler stopReading().
+            // GARDE 3: Si nous sommes déjà en pause, l'erreur est due au cancel()
             if (this.isPaused) {
-                this.dom.statusDiv.textContent = "⚠️ Arrêt forcé (Pause OK).";
-                return; 
+                this.dom.statusDiv.textContent = "pause" ;
+                return; 
             }
             
-            // Si ce n'est pas en pause, c'est une vraie erreur.
+            // Si ce n'est pas en pause, c'est une vraie erreur (l'API ne veut pas démarrer).
             this.dom.statusDiv.textContent = ` ⏹️ Arrêt de la lecture au segment ${this.currentSegmentIndex + 1}`;
             this.stopReading();
         };
@@ -276,7 +294,7 @@ class TTSReader {
 
         // Cas 2 : PAUSE (si la lecture est en cours et n'est pas déjà en pause)
         if (this.isSpeaking && !this.isPaused) {
-            // Utiliser cancel() pour garantir l'arrêt 
+            // Utiliser cancel() pour garantir l'arrêt 
             this.synth.cancel();	
             this.isPaused = true;
             this.isSpeaking = false;	
@@ -309,7 +327,7 @@ class TTSReader {
         // Réinitialisation complète des états
         this.isSpeaking = false;
         this.isPaused = false;
-        this.currentSegmentIndex = 0; 
+        this.currentSegmentIndex = 0; 
         
         this.clearHighlighting();
         this.dom.statusDiv.textContent = "⏹️ Lecture arrêtée.";
@@ -318,7 +336,7 @@ class TTSReader {
     
     finishReading() {
         // GARDE 2: Si nous sommes en pause, toute tentative d'appeler finishReading est ignorée.
-        if (this.isPaused) { 
+        if (this.isPaused) { 
             return;
         }
 
@@ -332,16 +350,46 @@ class TTSReader {
     }
 
     /** ------------------------- GESTION DU SURLIGNAGE ------------------------- */
+    
+    /**
+     * Nettoie tous les surlignages de mots et de segments de la vue de lecture.
+     */
+    clearActiveHighlighting() {
+        this.dom.readView.querySelectorAll('.word-span').forEach(span => {
+            span.classList.remove('highlight');
+            span.classList.remove('segment-highlight');
+        });
+    }
 
     setupReadView(fullText) {
         this.dom.textInput.classList.add('hidden');
         this.dom.readView.classList.remove('hidden');
         
-        const wordsAndSeparators = fullText.match(/\S+|\s+/g) || [];
-        this.dom.readView.innerHTML = wordsAndSeparators.map((part, index) => {
-            if (/\s/.test(part)) return part;	
-            return `<span class="word-span" data-word-index="${index}">${part}</span>`;
-        }).join('');
+        this.dom.readView.innerHTML = '';
+        
+        // IMPORTANT: On réutilise la segmentation ici pour garantir les index
+        const segments = this.segmentText(fullText);
+        this.textSegments = segments; // On s'assure que this.textSegments est à jour
+        
+        let globalWordIndex = 0;
+        
+        segments.forEach((segmentText, segmentIndex) => {
+            const wordsAndSeparators = segmentText.match(/\S+|\s+/g) || [];
+            
+            wordsAndSeparators.forEach((part) => {
+                if (/\s/.test(part)) {
+                    this.dom.readView.insertAdjacentText('beforeend', part);
+                } else {
+                    const span = document.createElement('span');
+                    span.textContent = part;
+                    span.classList.add('word-span');
+                    // CLASSE CRUCIALE POUR LE SURLIGNAGE DE SEGMENT
+                    span.classList.add(`segment-${segmentIndex}`);
+                    span.setAttribute('data-word-index', globalWordIndex++);
+                    this.dom.readView.appendChild(span);
+                }
+            });
+        });
     }
     
     clearHighlighting() {
@@ -422,8 +470,9 @@ class TTSReader {
             }
         }
     }
-
-
+    
+    // La fonction clearActiveHighlighting est maintenant placée correctement juste avant setupReadView
+    
     /** ------------------------- GESTION DES EBOOKS ------------------------- */
 
     loadEbooks() {
@@ -528,7 +577,7 @@ class TTSReader {
             this.openLoadModal();	
         }
     }
-
+        
     /** ------------------------- GESTION DES ÉTATS ET DES ÉVÉNEMENTS ------------------------- */
 
     updateControlState() {
@@ -593,21 +642,65 @@ class TTSReader {
         this.dom.textInput.addEventListener('input', () => this.updateControlState());
     }
 
-    handleFileInput(event) {
-        const file = event.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                this.dom.textInput.value = e.target.result;
-                this.dom.statusDiv.textContent = `📂 Fichier "${file.name}" importé.`;
-                this.updateControlState();
-            };
-            reader.readAsText(file, 'UTF-8');
-        }
+    // ... (Toute la classe TTSReader reste identique jusqu'à handleFileInput) ...
+    // Gestion de la musique
+handleMusicUpload(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const url = URL.createObjectURL(file);
+        this.dom.bgAudio.src = url;
+        this.dom.statusDiv.textContent = `🎵 Musique "${file.name}" chargée.`;
     }
+}
+handleFileInput(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Gestion du PDF
+  if (file.type === "application/pdf") {
+    this.dom.statusDiv.textContent = "⏳ Analyse du PDF en cours...";
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      const typedarray = new Uint8Array(e.target.result);
+      const pdfjsLib = window['pdfjs-dist/build/pdf'];
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      
+      try {
+        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+        let fullText = "";
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(s => s.str).join(' ');
+          fullText += pageText + "\n\n";
+        }
+        
+        this.dom.textInput.value = fullText;
+        this.dom.statusDiv.textContent = `📂 PDF "${file.name}" importé (${pdf.numPages} pages).`;
+        this.updateControlState();
+      } catch (err) {
+        console.error(err);
+        this.dom.statusDiv.textContent = "❌ Erreur : Impossible de lire ce PDF.";
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    
+  } else {
+    // Logique d'origine pour les fichiers .txt 
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this.dom.textInput.value = e.target.result;
+      this.dom.statusDiv.textContent = `📂 Fichier "${file.name}" importé.`;
+      this.updateControlState();
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+}
 }
 
 // Lancement de l'application
 document.addEventListener('DOMContentLoaded', () => {
-    new TTSReader();
+  new TTSReader();
 });
