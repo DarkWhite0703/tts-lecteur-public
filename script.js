@@ -20,7 +20,9 @@ class TTSReader {
  * TTSReader Class PRO
  */
 class TTSReader {
-    constructor() {
+    
+    constructor(){
+        
         if (!('speechSynthesis' in window)) {
             document.body.innerHTML = '<div class="container"><h1>❌ API non supportée</h1></div>';
             return;
@@ -94,6 +96,7 @@ class TTSReader {
     
     // --- LECTURE ---
     play() {
+        
         if (this.state.isPaused) {
             this.synth.resume();
             this.state.isPaused = false;
@@ -112,7 +115,7 @@ class TTSReader {
         
         this.dom.textInput.classList.add('hidden');
         this.dom.readView.classList.remove('hidden');
-        
+        this.requestWakeLock();
         this.readNextSegment();
         this.updateControlState();
     }
