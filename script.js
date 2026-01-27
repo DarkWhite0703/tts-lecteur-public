@@ -1,3 +1,34 @@
+document.addEventListener('DOMContentLoaded', () => {
+  const startBtn = document.getElementById('start-experience');
+  const heroSection = document.getElementById('hero-onboarding');
+  const mainApp = document.getElementById('main-app');
+  
+  // 1. Animation des cartes au démarrage
+  const cards = document.querySelectorAll('.card');
+  cards.forEach((card, index) => {
+    setTimeout(() => {
+      card.style.opacity = '1';
+      card.style.transform = 'translateY(0)';
+    }, 200 * index);
+  });
+  
+  // 2. Passage de l'accueil à l'application
+  startBtn.addEventListener('click', () => {
+    // Animation de sortie de l'accueil
+    heroSection.classList.add('fade-out');
+    
+    setTimeout(() => {
+      heroSection.classList.add('hidden'); // On retire l'accueil
+      mainApp.classList.remove('hidden'); // On affiche l'app
+      mainApp.classList.add('fade-in'); // Petite animation douce
+      
+      // On peut aussi faire défiler vers le haut automatiquement
+      window.scrollTo(0, 0);
+    }, 500);
+  });
+});
+
+// --- ICI : Colle tout le reste du code JavaScript de ton fichier audio.zip/script.js ---
 /**
  * TTSReader Class
  * Gère toutes les fonctionnalités avancées du lecteur audio (TTS) :
