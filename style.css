@@ -15,6 +15,7 @@
 
 /* Style de la hero-section (garde ton code style Canva ici) */
 .hero-section {
+    border-radius: 20px;
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -348,6 +349,7 @@ input:checked + .slider:before { transform: translateX(26px); }
 /* --- RESPONSIVE --- */
 @media (max-width: 600px) {
     .container {
+        border-radius: 15px;
         padding: 20px;
     }
     .input-group, .controls-detail {
@@ -480,7 +482,8 @@ body {
 }
 
 .container {
-    max-width: 1100px;
+    
+    max-width: 700px;
     width: 100%;
     padding: 40px 20px;
     text-align: center;
@@ -489,7 +492,7 @@ body {
 /* HEADER */
 .hero-header h1 {
     font-size: 3.5rem;
-    font-weight: 800;
+    font-weight: 600;
     margin-bottom: 15px;
     letter-spacing: -2px;
 }
@@ -585,7 +588,7 @@ body {
     padding: 20px 45px;
     border-radius: 100px;
     text-decoration: none;
-    font-weight: 600;
+    font-weight: 300;
     font-size: 1.1rem;
     transition: opacity 0.3s;
     box-shadow: 0 10px 20px rgba(139, 92, 246, 0.2);
