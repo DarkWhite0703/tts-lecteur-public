@@ -1,4 +1,16 @@
+/**
+ * TTSReader Class
+ * Gère toutes les fonctionnalités avancées du lecteur audio (TTS) :
+ * - Thèmes, Préférences (Sauvegarde)
+ * - Surlignage Synchronisé
+ * - Segmentation Intelligente (Fluidité après les points)
+ * - Gestion de bibliothèque d'Ebooks (Sauvegarde/Chargement/Suppression)
+ * * CORRECTION FINALE: Ajout de gardes isPaused dans utterance.onerror pour empêcher la réinitialisation involontaire
+ * * causée par le déclenchement tardif de l'événement d'erreur après un synth.cancel().
+ * * CORRECTION PC: Mise à jour de readNextSegment pour nettoyer le surlignage de segment et résoudre le problème de blocage/d'erreur immédiate.
+ */
 document.addEventListener('DOMContentLoaded', () => {
+    
   const startBtn = document.getElementById('start-experience');
   const heroSection = document.getElementById('hero-onboarding');
   const mainApp = document.getElementById('main-app');
@@ -229,11 +241,9 @@ class TTSReader {
         this.dom.musicVolume.addEventListener('input', (e) => {
             this.dom.bgAudio.volume = e.target.value;
         });
-        
+        // À ajouter dans addEventListeners()
+this.dom.themeCheckbox.addEventListener('change', this.toggleDarkMode);
         // Switch Thème
-        this.dom.themeCheckbox.addEventListener('change', () => {
-            document.body.classList.toggle('dark-mode');
-        });
     }
     
     loadVoices() {
@@ -713,7 +723,7 @@ const reader = new TTSReader();
         }
     }
     
-    // La fonction clearActiveHighlighting est maintenant placée correctement juste avant setupReadView
+    //fonction clearActiveHighlighting maintenant placée correctement juste avant setupReadView
     
     /** ------------------------- GESTION DES EBOOKS ------------------------- */
 
