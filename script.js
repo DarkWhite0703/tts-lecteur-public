@@ -75,7 +75,7 @@ class TTSReader {
         this.wakeLock = null;
         
         // Création du lecteur de silence pour le background mobile
-        this.silentPlayer = new Audio('https://github.com/anars/blank-audio/raw/master/10-seconds-of-silence.mp3');
+        this.silentPlayer = new Audio('silence song.mp3');
         this.silentPlayer.loop = true;
         
         this.dom = {
@@ -247,6 +247,7 @@ this.dom.themeCheckbox.addEventListener('change', this.toggleDarkMode);
     }
     
     loadVoices() {
+        // Dans ta fonction qui charge les voix
         const voices = this.synth.getVoices();
         this.dom.voiceSelect.innerHTML = voices
             .map(v => `<option data-name="${v.name}">${v.name} (${v.lang})</option>`)
@@ -445,6 +446,7 @@ const reader = new TTSReader();
         
         this.setupReadView(text); // Prépare le DOM pour le surlignage
         this.readNextSegment();
+        this.silentPlayer.play().catch(err => console.log("L'audio n'a pas pu démarrer:", err));
     }
 
     /**
@@ -549,6 +551,7 @@ const reader = new TTSReader();
             // Utiliser cancel() pour garantir l'arrêt 
             this.synth.cancel();	
             this.isPaused = true;
+            this.silentPlayer.pause(); // On met le silence en pause
             this.isSpeaking = false;	
             this.dom.statusDiv.textContent = "⏸️ Lecture en pause.";
             
@@ -557,7 +560,7 @@ const reader = new TTSReader();
         else if (this.isPaused && this.currentSegmentIndex < this.textSegments.length) {
             this.isPaused = false;
             this.isSpeaking = true;
-            
+            this.silentPlayer.pause(); // On met le silence en pause
             // Relancer la lecture à partir du segment sauvegardé
             this.readNextSegment();	
             
@@ -574,16 +577,20 @@ const reader = new TTSReader();
         // Annule toutes les lectures en cours (très important pour vider le moteur)
         if (this.synth.speaking || this.isSpeaking || this.isPaused) {
             this.synth.cancel();
+            
         }
         
         // Réinitialisation complète des états
+        
         this.isSpeaking = false;
         this.isPaused = false;
+        
         this.currentSegmentIndex = 0; 
         
         this.clearHighlighting();
         this.dom.statusDiv.textContent = "⏹️ Lecture arrêtée.";
         this.updateControlState();
+        
     }
     
     finishReading() {
@@ -591,7 +598,8 @@ const reader = new TTSReader();
         if (this.isPaused) { 
             return;
         }
-
+        this.silentPlayer.pause(); // Arrêt du son muet
+        this.silentPlayer.currentTime = 0;
         this.synth.cancel();
         this.isSpeaking = false;
         this.isPaused = false;
