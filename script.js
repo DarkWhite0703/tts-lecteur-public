@@ -66,6 +66,7 @@ class TTSReader {
     
     constructor(){
         
+        
         if (!('speechSynthesis' in window)) {
             document.body.innerHTML = '<div class="container"><h1>❌ API non supportée</h1></div>';
             return;
@@ -73,10 +74,13 @@ class TTSReader {
         
         this.synth = window.speechSynthesis;
         this.wakeLock = null;
-        
+        this.segments = [];
+        this.currentIndex = 0;
+        this.isPaused = true;
         // Création du lecteur de silence pour le background mobile
         this.silentPlayer = new Audio('silence song.mp3');
         this.silentPlayer.loop = true;
+        this.currentFileName = ""; // Pour identifier le livre
         
         this.dom = {
             textInput: document.getElementById('text-input'),
@@ -106,14 +110,22 @@ class TTSReader {
             isPaused: false,
             isPlaying: false
         };
-        
+        // Remplace ou ajoute ces lignes dans ton constructor
+        this.dom.progressBar = document.getElementById('progress-fill'); // correspond à ton <div id="progress-fill">
+        this.dom.progressText = document.getElementById('progress-text'); // correspond à <small id="progress-text">
+        this.dom.sectionList = document.getElementById('section-list'); // pour la liste des chapitres/sections
+        this.dom.progressContainer = document.getElementById('progress-container');
         this.init();
+        
     }
     
     init() {
+ // audio(1) : On vérifie si un livre était en cours
         this.loadVoices();
+        window.addEventListener('load', () => this.restoreSession());
         if (this.synth.onvoiceschanged !== undefined) {
             this.synth.onvoiceschanged = () => this.loadVoices();
+            
         }
         this.initEventListeners();
     }
@@ -136,7 +148,7 @@ class TTSReader {
             this.wakeLock = null;
         }
     }
-    
+
     // --- LECTURE ---
     play() {
         
@@ -447,6 +459,8 @@ const reader = new TTSReader();
         this.setupReadView(text); // Prépare le DOM pour le surlignage
         this.readNextSegment();
         this.silentPlayer.play().catch(err => console.log("L'audio n'a pas pu démarrer:", err));
+        this.dom.progressContainer.classList.remove('hidden'); // Affiche la barre
+        this.updateProgressBar();
     }
 
     /**
@@ -535,40 +549,48 @@ const reader = new TTSReader();
         this.dom.statusDiv.textContent = `▶️ Lecture du segment ${this.currentSegmentIndex + 1}/${this.textSegments.length}...`;
         this.updateSegmentHighlight();
         this.updateControlState();
+        this.updateProgressBar();
     }
 
     /** * Gère la pause et la reprise de manière fiable sur toutes les plateformes.
       */
     togglePause = () => {
-        // Cas 1 : Si la lecture est terminée ou n'a jamais commencé
-        if (!this.isSpeaking && this.currentSegmentIndex === 0 && this.textSegments.length > 0) {
-            this.startReading();
-            return;
-        }
-
-        // Cas 2 : PAUSE (si la lecture est en cours et n'est pas déjà en pause)
-        if (this.isSpeaking && !this.isPaused) {
-            // Utiliser cancel() pour garantir l'arrêt 
-            this.synth.cancel();	
-            this.isPaused = true;
-            this.silentPlayer.pause(); // On met le silence en pause
-            this.isSpeaking = false;	
-            this.dom.statusDiv.textContent = "⏸️ Lecture en pause.";
-            
-        }	
-        // Cas 3 : REPRENDRE (si l'état est "paused" et qu'il reste des segments à lire)
-        else if (this.isPaused && this.currentSegmentIndex < this.textSegments.length) {
-            this.isPaused = false;
-            this.isSpeaking = true;
-            this.silentPlayer.pause(); // On met le silence en pause
-            // Relancer la lecture à partir du segment sauvegardé
-            this.readNextSegment();	
-            
-            this.dom.statusDiv.textContent = `▶️ Lecture reprise du segment ${this.currentSegmentIndex + 1}.`;
+    // Cas 1 : Démarrage initial
+    if (!this.isSpeaking && this.currentSegmentIndex === 0 && !this.isPaused) {
+        this.startReading();
+        return;
+    }
+    
+    // Cas 2 : METTRE EN PAUSE
+    if (this.isSpeaking && !this.isPaused) {
+        this.isPaused = true;
+        this.isSpeaking = false;
+        
+        this.synth.cancel(); // Arrête immédiatement la voix
+        
+        if (this.silentPlayer) this.silentPlayer.pause();
+        
+        this.dom.statusDiv.textContent = "⏸️ Lecture en pause.";
+    }
+    
+    // Cas 3 : REPRENDRE
+    else if (this.isPaused) {
+        this.isPaused = false;
+        this.isSpeaking = true;
+        
+        // CORRECTIF : On relance le silence pour garder le moteur actif
+        if (this.silentPlayer) {
+            this.silentPlayer.play().catch(e => console.log("Audio play blocked"));
         }
         
-        this.updateControlState();
+        // On relance le segment là où on s'était arrêté
+        this.readNextSegment();
+        
+        this.dom.statusDiv.textContent = `▶️ Reprise : segment ${this.currentSegmentIndex + 1}/${this.textSegments.length}`;
     }
+    
+    this.updateControlState();
+}
 
     /**
      * Arrête complètement la lecture et réinitialise l'état.
@@ -622,11 +644,17 @@ const reader = new TTSReader();
     }
 
     setupReadView(fullText) {
+         if (this.dom.sectionList) {
+     this.dom.sectionList.innerHTML = this.textSegments.map((seg, i) => `
+        <div class="section-item ${i === this.currentSegmentIndex ? 'active' : ''}" onclick="reader.jumpToSection(${i})">
+            Section ${i + 1}
+        </div>
+    `).join('');
+ }
         this.dom.textInput.classList.add('hidden');
         this.dom.readView.classList.remove('hidden');
         
         this.dom.readView.innerHTML = '';
-        
         // IMPORTANT: On réutilise la segmentation ici pour garantir les index
         const segments = this.segmentText(fullText);
         this.textSegments = segments; // On s'assure que this.textSegments est à jour
@@ -684,6 +712,22 @@ const reader = new TTSReader();
             allSpans[segmentStartWordIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }
+    
+    updateProgressBar() {
+    if (this.textSegments && this.textSegments.length > 0) {
+        const progress = Math.round((this.currentSegmentIndex / this.textSegments.length) * 100);
+        
+        // Mise à jour de la largeur de la barre
+        if (this.dom.progressBar) {
+            this.dom.progressBar.style.width = `${progress}%`;
+        }
+        
+        // Mise à jour du texte "0% lu"
+        if (this.dom.progressText) {
+            this.dom.progressText.textContent = `${progress}% lu`;
+        }
+    }
+}
 
     highlightWord(segmentText, charIndex) {
         const allSpans = this.dom.readView.querySelectorAll('.word-span');
@@ -765,23 +809,26 @@ const reader = new TTSReader();
     }
     
     handleSaveEbook = () => {
-        const titleInput = document.getElementById('ebook-title-input');
-        let title = titleInput.value.trim() || 'Sans Titre';
-        const currentText = this.dom.textInput.value.trim();
-        
-        if (this.savedEbooks[title] && !confirm(`Un ebook nommé "${title}" existe déjà. Voulez-vous l'écraser ?`)) {
-            return;
-        }
-
-        this.savedEbooks[title] = {
-            text: currentText,
-            date: new Date().toLocaleDateString('fr-FR'),
-            preview: currentText.substring(0, 100).replace(/\n/g, ' ') + '...'
-        };
-        this.saveEbooks(this.savedEbooks);
-        this.dom.statusDiv.textContent = `💾 Ebook "${title}" sauvegardé !`;
-        this.dom.ebookModal.classList.add('hidden');
+    const titleInput = document.getElementById('ebook-title-input');
+    let title = titleInput.value.trim() || 'Sans Titre';
+    const currentText = this.dom.textInput.value.trim();
+    
+    if (this.savedEbooks[title] && !confirm(`Un ebook nommé "${title}" existe déjà. Voulez-vous l'écraser ?`)) {
+        return;
     }
+    
+    // On sauvegarde le texte ET l'index actuel
+    this.savedEbooks[title] = {
+        text: currentText,
+        lastIndex: this.currentSegmentIndex, // Sauvegarde de la section
+        date: new Date().toLocaleDateString('fr-FR'),
+        preview: currentText.substring(0, 100).replace(/\n/g, ' ') + '...'
+    };
+    
+    this.saveEbooks(this.savedEbooks);
+    this.dom.statusDiv.textContent = `💾 Ebook "${title}" sauvegardé à la section ${this.currentSegmentIndex + 1} !`;
+    this.dom.ebookModal.classList.add('hidden');
+}
 
     openLoadModal = () => {
         this.dom.modalTitle.textContent = "Charger un Ebook";
@@ -820,14 +867,32 @@ const reader = new TTSReader();
     }
 
     handleLoadEbook = (title) => {
-        const ebook = this.savedEbooks[title];
-        if (ebook) {
-            this.dom.textInput.value = ebook.text;
-            this.dom.statusDiv.textContent = `📖 Ebook "${title}" chargé dans la zone de texte.`;
-            this.dom.ebookModal.classList.add('hidden');
-            this.updateControlState();
+    const ebook = this.savedEbooks[title];
+    if (ebook) {
+        this.dom.textInput.value = ebook.text;
+        
+        // Si un index a été sauvegardé et qu'il est supérieur à 0
+        if (ebook.lastIndex && ebook.lastIndex > 0) {
+            const resume = confirm(`Voulez-vous reprendre la lecture de "${title}" à la section ${ebook.lastIndex + 1} ?`);
+            if (resume) {
+                this.currentSegmentIndex = ebook.lastIndex;
+                this.textSegments = this.segmentText(ebook.text);
+                
+                // On prépare la vue et on lance directement
+                this.setupReadView(ebook.text);
+                this.isSpeaking = true;
+                this.isPaused = false;
+                this.readNextSegment();
+                this.dom.statusDiv.textContent = `▶️ Reprise de "${title}"...`;
+            }
+        } else {
+            this.dom.statusDiv.textContent = `📖 Ebook "${title}" chargé au début.`;
         }
+        
+        this.dom.ebookModal.classList.add('hidden');
+        this.updateControlState();
     }
+}
 
     handleDeleteEbook = (title) => {
         if (confirm(`Êtes-vous sûr de vouloir supprimer l'Ebook "${title}" ?`)) {

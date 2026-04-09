@@ -84,7 +84,24 @@
 
         <textarea id="text-input" placeholder="Collez votre texte ici pour commencer..."></textarea>
         <div id="read-view" class="read-view hidden"></div>
-            
+        <canvas id="visualizer"></canvas>
+
+    <div id="app">
+
+        <aside id="dashboard" class="glass">
+            <section class="widget">
+                <h3>Progression</h3>
+                <div class="progress-bar-bg"><div id="progress-fill"></div></div>
+                <small id="progress-text">0% lu</small>
+            </section>
+
+            <section class="widget">
+                <h3>Sections</h3>
+                <div id="section-list"></div>
+            </section>
+        </aside>
+    </div> 
+    
         <div class="input-group">
             <div class="file-import">
                 <label for="file-input" class="custom-file-upload">
@@ -97,7 +114,7 @@
                 <select id="voice-select"></select>
             </div>
         </div>
-
+        
         <div class="music-controls">
             <div class="music-header">
                 <i class="fas fa-compact-disc"></i> 
@@ -151,6 +168,7 @@
             <h2 id="modal-title"></h2>
             <div id="modal-body"></div>
         </div>
+        
     </div>
     </main>
 
