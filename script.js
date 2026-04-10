@@ -99,6 +99,9 @@ class TTSReader {
             themeCheckbox: document.getElementById('theme-checkbox'),
             saveBtn: document.getElementById('save-btn'),
             loadBtn: document.getElementById('load-btn'),
+            progressFill: document.getElementById('progress-fill'),
+            progressText: document.getElementById('progress-text'),
+            sectionList: document.getElementById('section-list'),
             ebookModal: document.getElementById('ebook-modal'),
             closeBtn: document.querySelector('.close-btn')
         };
@@ -166,6 +169,7 @@ class TTSReader {
         
         this.state.isPlaying = true;
         this.state.sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+        this.renderSections();
         this.state.currentSentenceIndex = 0;
         
         this.dom.textInput.classList.add('hidden');
@@ -173,49 +177,103 @@ class TTSReader {
         this.requestWakeLock();
         this.readNextSegment();
         this.updateControlState();
+        
     }
     
-    readNextSegment() {
-        if (this.state.currentSentenceIndex >= this.state.sentences.length) {
-            this.stop();
-            return;
+    // --- MÉTHODES À PLACER DANS TA CLASSE ---
+
+updateProgressBar() {
+    // On utilise this.state ou les variables de ta classe
+    const total = this.state.sentences.length;
+    const current = this.state.currentSentenceIndex;
+    
+    if (total === 0) return;
+    
+    const percent = Math.round((current / total) * 100);
+    
+    if (this.dom.progressFill) {
+    this.dom.progressFill.style.width = percent + "%";
+    }
+    if (this.dom.progressText) {
+        this.dom.progressText.textContent = percent + "% lu";
+    }
+    
+    // Mise à jour visuelle des sections
+    const items = this.dom.sectionList.querySelectorAll('.section-item');
+    items.forEach((item) => {
+        const idx = parseInt(item.dataset.index);
+        if (current >= idx && current < idx + 5) {
+    item.classList.add('active');
+} 
+
+});
+}
+
+renderSections() {
+    if (!this.dom.sectionList || !this.state.sentences) return;
+    this.dom.sectionList.innerHTML = '';
+    const step = 1;
+    for (let i = 0; i < this.state.sentences.length; i += step) {
+        const div = document.createElement('div');
+        div.className = 'section-item';
+        div.dataset.index = i;
+        
+        const preview = this.state.sentences[i].substring(0, 25) + "...";
+        div.innerHTML = `<strong>Section ${Math.floor(i/step) + 1}</strong><small>${preview}</small>`;
+        
+        div.onclick = () => {
+            this.synth.cancel();
+            this.state.currentSentenceIndex = i;
+            this.state.isPaused = false;
+            this.readNextSegment();
+        };
+        this.dom.sectionList.appendChild(div);
+    }
+}
+// --- NOUVELLE MÉTHODE : Sauter à une section ---
+jumpToSection(index) {
+    this.synth.cancel();
+    this.state.currentSentenceIndex = index;
+    this.state.isPaused = false;
+    this.state.isPlaying = true;
+    this.readNextSegment();
+}
+
+readNextSegment() {
+    if (this.state.currentSentenceIndex >= this.state.sentences.length) {
+        this.stop();
+        return;
+    }
+    
+    // ON APPELLE LA BARRE DE PROGRESSION ICI
+    this.updateProgressBar();
+
+    const text = this.state.sentences[this.state.currentSentenceIndex];
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Réglages (Vitesse, Tonalité, Volume)
+    utterance.rate = document.getElementById('rate').value / 10 || 1;
+utterance.pitch = document.getElementById('pitch').value / 10 || 1;
+utterance.volume = document.getElementById('volume').value / 10 || 1;
+    
+    // Voix
+    const selectedVoice = this.dom.voiceSelect.selectedOptions[0]?.getAttribute('data-name');
+    utterance.voice = this.synth.getVoices().find(v => v.name === selectedVoice);
+    
+    utterance.onstart = () => {
+        this.highlightText(this.state.currentSentenceIndex);
+    };
+    
+    utterance.onend = () => {
+        // Sécurité pour éviter de sauter des segments si on a fait pause
+        if (this.state.isPlaying && !this.state.isPaused) {
+            this.state.currentSentenceIndex++;
+            this.readNextSegment();
         }
-        
-        const text = this.state.sentences[this.state.currentSentenceIndex];
-        const utterance = new SpeechSynthesisUtterance(text);
-        
-        // Appliquer les réglages
-        const selectedVoice = this.dom.voiceSelect.selectedOptions[0]?.getAttribute('data-name');
-        utterance.voice = this.synth.getVoices().find(v => v.name === selectedVoice);
-        utterance.rate = document.getElementById('rate').value / 10;
-        utterance.pitch = document.getElementById('pitch').value / 10;
-        utterance.volume = document.getElementById('volume').value / 10;
-        
-        utterance.onstart = () => {
-            this.highlightText(this.state.currentSentenceIndex);
-        };
-        
-        utterance.onend = () => {
-            if (this.state.isPlaying && !this.state.isPaused) {
-                this.state.currentSentenceIndex++;
-                this.readNextSegment();
-            }
-        };
-        
-        this.synth.speak(utterance);
-    }
+    };
     
-    stop() {
-        this.synth.cancel();
-        this.silentPlayer.pause();
-        this.releaseWakeLock(); // Relance la mise en veille normale
-        
-        this.state.isPlaying = false;
-        this.state.isPaused = false;
-        this.dom.readView.classList.add('hidden');
-        this.dom.textInput.classList.remove('hidden');
-        this.updateControlState();
-    }
+    this.synth.speak(utterance);
+}
     
     // --- INTERFACE & EVENTS ---
     initEventListeners() {
@@ -466,6 +524,7 @@ const reader = new TTSReader();
     /**
      * Lit le segment de texte à l'index actuel, puis passe au suivant.
      */
+    
     readNextSegment = () => {
         // Vérifie si la fin du texte est atteinte
         if (this.currentSegmentIndex >= this.textSegments.length) {
@@ -712,22 +771,6 @@ const reader = new TTSReader();
             allSpans[segmentStartWordIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }
-    
-    updateProgressBar() {
-    if (this.textSegments && this.textSegments.length > 0) {
-        const progress = Math.round((this.currentSegmentIndex / this.textSegments.length) * 100);
-        
-        // Mise à jour de la largeur de la barre
-        if (this.dom.progressBar) {
-            this.dom.progressBar.style.width = `${progress}%`;
-        }
-        
-        // Mise à jour du texte "0% lu"
-        if (this.dom.progressText) {
-            this.dom.progressText.textContent = `${progress}% lu`;
-        }
-    }
-}
 
     highlightWord(segmentText, charIndex) {
         const allSpans = this.dom.readView.querySelectorAll('.word-span');
@@ -807,6 +850,33 @@ const reader = new TTSReader();
 
         document.getElementById('confirm-save-btn').addEventListener('click', this.handleSaveEbook);
     }
+    saveProgress = () => {
+    const data = {
+        text: this.dom.textInput.value,
+        currentIndex: this.currentSegmentIndex,
+        timestamp: new Date().getTime()
+    };
+    localStorage.setItem('tts_progress', JSON.stringify(data));
+    this.dom.statusDiv.textContent = "💾 Position sauvegardée automatiquement !";
+}
+    loadProgress = () => {
+    const savedData = localStorage.getItem('tts_progress');
+    if (savedData) {
+        const data = JSON.parse(savedData);
+        
+        // On remet le texte dans la zone de saisie
+        this.dom.textInput.value = data.text;
+        
+        // On prépare les segments
+        this.prepareSegments();
+        
+        // On repositionne l'index
+        this.currentSegmentIndex = data.currentIndex;
+        
+        this.dom.statusDiv.textContent = `📖 Reprise possible au segment ${this.currentSegmentIndex + 1}.`;
+        this.updateControlState();
+    }
+}
     
     handleSaveEbook = () => {
     const titleInput = document.getElementById('ebook-title-input');
