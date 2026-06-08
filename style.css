@@ -732,3 +732,48 @@ body.dark-mode {
     color: rgba(255, 255, 255, 0.5);
     font-size: 0.75rem;
 }
+/* ==========================================================================
+   STYLISATION PREMIUM DES IMPORTS DE FICHIERS (MASQUAGE DU BOUTON MOCHE)
+   ========================================================================== */
+
+/* 1. On cache complètement l'input par défaut du navigateur */
+#file-input, #music-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+/* 2. On transforme le <label> associé en un magnifique bouton moderne */
+.custom-file-upload, 
+label[for="music-input"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color, #3f3f46);
+    border-radius: 8px;
+    color: var(--text-main, #f4f4f5);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 3. Effets de survol (Hover) et d'activation au clic */
+.custom-file-upload:hover, 
+label[for="music-input"]:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent, #a855f7);
+    transform: translateY(-1px);
+}
+
+.custom-file-upload:active, 
+label[for="music-input"]:active {
+    transform: scale(0.97);
+}
